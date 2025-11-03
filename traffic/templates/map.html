@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Traffic Regulation System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #fff;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .container {
+            display: flex;
+            height: calc(100vh - 80px);
+        }
+
+        .sidebar {
+            width: 350px;
+            background: #16213e;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+        }
+
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .control-panel {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .control-panel h3 {
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+
+        select, button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        select {
+            background: #1a1a2e;
+            color: #fff;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        .legend {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .legend h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .legend-color {
+            width: 30px;
+            height: 4px;
+            margin-right: 10px;
+            border-radius: 2px;
+        }
+
+        .traffic-info {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .traffic-info h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: #1a1a2e;
+            border-radius: 5px;
+        }
+
+        .route-info {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .route-info h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .route-segment {
+            background: #1a1a2e;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            padding: 20px 40px;
+            border-radius: 10px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚦 Real-Time Traffic Regulation System</h1>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="control-panel">
+                <h3>Route Planning</h3>
+                <select id="startIntersection">
+                    <option value="">Select Start Point</option>
+                </select>
+                <select id="endIntersection">
+                    <option value="">Select End Point</option>
+                </select>
+                <button onclick="findOptimalRoute()">Find Optimal Route</button>
+                <button onclick="simulateTraffic()">Simulate Traffic</button>
+            </div>
+
+            <div class="legend">
+                <h3>Traffic Levels</h3>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4ade80;"></div>
+                    <span>Low (0-40%)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #fbbf24;"></div>
+                    <span>Medium (40-70%)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #fb923c;"></div>
+                    <span>High (70-90%)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ef4444;"></div>
+                    <span>Critical (90%+)</span>
+                </div>
+            </div>
+
+            <div class="traffic-info">
+                <h3>Traffic Statistics</h3>
+                <div id="trafficStats"></div>
+            </div>
+
+            <div class="route-info" id="routeInfo" style="display: none;">
+                <h3>Optimal Route</h3>
+                <div id="routeDetails"></div>
+            </div>
+        </div>
+
+        <div class="map-container">
+            <div id="map"></div>
+            <div id="loading" class="loading" style="display: none;">Loading...</div>
+        </div>
+    </div>
+
+    <script>
+        let map;
+        let markers = [];
+        let polylines = [];
+        let routePolyline = null;
+        let routeMarkers = [];
+        let intersectionsData = [];
+        let roadsData = [];
+        let currentRoute = null;
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 13.0827, lng: 80.2707 }, // Chennai coordinates
+                zoom: 12,
+                styles: [
+                    { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+                    { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+                    { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+                    {
+                        featureType: "road",
+                        elementType: "geometry",
+                        stylers: [{ color: "#38414e" }]
+                    },
+                    {
+                        featureType: "road",
+                        elementType: "geometry.stroke",
+                        stylers: [{ color: "#212a37" }]
+                    }
+                ]
+            });
+
+            loadMapData();
+            setInterval(loadMapData, 1000000000); // Refresh every 10 seconds
+        }
+        function loadMapData() {
+            fetch('/api/map-data/')
+                .then(response => response.json())
+                .then(data => {
+                    intersectionsData = data.intersections;
+                    roadsData = data.roads;
+                    
+                    
+                    updateTrafficStats();
+                    updateIntersectionSelectors();
+                });
+        }
+
+        function updateMap() {
+            // Clear existing markers and polylines (but preserve route)
+            markers.forEach(marker => marker.setMap(null));
+            polylines.forEach(polyline => polyline.setMap(null));
+            markers = [];
+            polylines = [];
+
+            // Add intersection markers
+            intersectionsData.forEach(intersection => {
+                const marker = new google.maps.Marker({
+                    position: { lat: intersection.lat, lng: intersection.lng },
+                    map: map,
+                    title: intersection.name,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 10,
+                        fillColor: '#667eea',
+                        fillOpacity: 1,
+                        strokeColor: '#fff',
+                        strokeWeight: 2
+                    }
+                });
+
+                const infoWindow = new google.maps.InfoWindow({
+                    content: `<div style="color: #000;">
+                        <strong>${intersection.name}</strong><br>
+                        Capacity: ${intersection.capacity} vehicles/min
+                    </div>`
+                });
+
+                marker.addListener('click', () => {
+                    infoWindow.open(map, marker);
+                });
+
+                markers.push(marker);
+            });
+
+            // Add road polylines
+            roadsData.forEach(road => {
+                const colorMap = {
+                    'low': '#4ade80',
+                    'medium': '#fbbf24',
+                    'high': '#fb923c',
+                    'critical': '#ef4444'
+                };
+
+                const polyline = new google.maps.Polyline({
+                    path: [
+                        { lat: road.from_coords.lat, lng: road.from_coords.lng },
+                        { lat: road.to_coords.lat, lng: road.to_coords.lng }
+                    ],
+                    strokeColor: colorMap[road.traffic_level],
+                    strokeOpacity: 0.8,
+                    strokeWeight: 5,
+                    map: map
+                });
+
+                const infoWindow = new google.maps.InfoWindow();
+
+                polyline.addListener('click', (e) => {
+                    const utilization = ((road.current_traffic / road.capacity) * 100).toFixed(1);
+                    infoWindow.setContent(`<div style="color: #000;">
+                        <strong>Road Status</strong><br>
+                        Traffic: ${road.current_traffic}/${road.capacity} vehicles<br>
+                        Utilization: ${utilization}%<br>
+                        Travel Time: ${road.travel_time} min<br>
+                        Level: ${road.traffic_level.toUpperCase()}
+                    </div>`);
+                    infoWindow.setPosition(e.latLng);
+                    infoWindow.open(map);
+                });
+
+                polylines.push(polyline);
+            });
+
+            // Redraw route if exists
+            if (currentRoute) {
+                redrawRoute(currentRoute);
+            }
+        }
+        function showRouteTimeDetails(segments, startId, endId) {
+    let totalTime = 0;
+    let detailsHTML = '';
+
+    segments.forEach(seg => {
+        const emoji = seg.traffic_level === 'low' ? '🟢' :
+                      seg.traffic_level === 'medium' ? '🟡' :
+                      seg.traffic_level === 'high' ? '🟠' : '🔴';
+        totalTime += seg.travel_time_min;
+        detailsHTML += `
+            <div class="stat">
+                ${seg.from} → ${seg.to} | ${emoji} ${seg.traffic_level.toUpperCase()} | ${seg.travel_time_min} mins
+            </div>`;
+    });
+
+    const totalHTML = `
+        <div style="font-size:13px; color:#9ca3af; margin-top:10px;">
+            Total Estimated Time: <strong>${totalTime.toFixed(2)} mins</strong>
+        </div>
+    `;
+
+    document.getElementById('trafficStats').innerHTML +=
+        `<div style="margin-top:12px;">
+            <h4 style="font-weight:600; margin-bottom:6px;">Segment Details:</h4>
+            ${detailsHTML}
+            ${totalHTML}
+        </div>`;
+}
+
+        function updateTrafficStats() {
+            const stats = {
+                total: roadsData.length,
+                low: roadsData.filter(r => r.traffic_level === 'low').length,
+                medium: roadsData.filter(r => r.traffic_level === 'medium').length,
+                high: roadsData.filter(r => r.traffic_level === 'high').length,
+                critical: roadsData.filter(r => r.traffic_level === 'critical').length
+            };
+
+            const statsHTML = `
+                <div class="stat"><span>Total Roads:</span><span>${stats.total}</span></div>
+                <div class="stat"><span>🟢 Low Traffic:</span><span>${stats.low}</span></div>
+                <div class="stat"><span>🟡 Medium Traffic:</span><span>${stats.medium}</span></div>
+                <div class="stat"><span>🟠 High Traffic:</span><span>${stats.high}</span></div>
+                <div class="stat"><span>🔴 Critical:</span><span>${stats.critical}</span></div>
+            `;
+
+            document.getElementById('trafficStats').innerHTML = statsHTML;
+        }
+
+        function updateIntersectionSelectors() {
+            const startSelect = document.getElementById('startIntersection');
+            const endSelect = document.getElementById('endIntersection');
+
+            const options = intersectionsData.map(i => 
+                `<option value="${i.id}">${i.name}</option>`
+            ).join('');
+
+            startSelect.innerHTML = '<option value="">Select Start Point</option>' + options;
+            endSelect.innerHTML = '<option value="">Select End Point</option>' + options;
+        }
+
+      function findOptimalRoute() {
+            const startId = document.getElementById('startIntersection').value;
+            const endId = document.getElementById('endIntersection').value;
+
+            if (!startId || !endId) {
+                alert('Please select both start and end points');
+                return;
+            }
+
+            if (startId === endId) {
+                alert('Start and end points cannot be the same');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+
+            fetch(`/api/route-traffic/?start=${startId}&end=${endId}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('loading').style.display = 'none';
+                    
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+
+                    // Only show selected route roads (hide all others)
+                    clearMap();
+                    showSelectedRoute(data.segments);
+                    updateRouteTrafficStats(data.segments, startId, endId);
+                    showRouteTimeDetails(data.segments, startId, endId);
+                })
+                .catch(error => {
+                    document.getElementById('loading').style.display = 'none';
+                    alert('Error loading route traffic: ' + error);
+                });
+        }
+
+function clearMap() {
+    markers.forEach(marker => marker.setMap(null));
+    polylines.forEach(polyline => polyline.setMap(null));
+    markers = [];
+    polylines = [];
+}
+
+function showSelectedRoute(segments) {
+    const colorMap = {
+        'low': '#4ade80',
+        'medium': '#fbbf24',
+        'high': '#fb923c',
+        'critical': '#ef4444'
+    };
+
+
+    // Draw each segment of the route
+    segments.forEach(seg => {
+        const polyline = new google.maps.Polyline({
+            path: [
+                { lat: seg.from_coords.lat, lng: seg.from_coords.lng },
+                { lat: seg.to_coords.lat, lng: seg.to_coords.lng }
+            ],
+            strokeColor: colorMap[seg.traffic_level],
+            strokeOpacity: 0.9,
+            strokeWeight: 6,
+            map: map
+        });
+        polylines.push(polyline);
+    });
+
+    // Add markers at start and end
+    const first = segments[0];
+    const last = segments[segments.length - 1];
+    addMarker(first.from_coords, 'A', '#4ade80');
+    addMarker(last.to_coords, 'B', '#ef4444');
+}
+
+function addMarker(coords, label, color) {
+    const marker = new google.maps.Marker({
+        position: coords,
+        map: map,
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: color,
+            fillOpacity: 1,
+            strokeColor: '#fff',
+            strokeWeight: 2
+        },
+        label: { text: label, color: '#fff', fontWeight: 'bold' }
+    });
+    markers.push(marker);
+}
+
+
+        function clearRoute() {
+            // Remove route polyline
+            if (routePolyline) {
+                routePolyline.setMap(null);
+                routePolyline = null;
+            }
+
+            // Remove route markers
+            routeMarkers.forEach(marker => marker.setMap(null));
+            routeMarkers = [];
+
+            // Clear current route
+            currentRoute = null;
+
+            // Hide route info
+            document.getElementById('routeInfo').style.display = 'none';
+
+            // Clear selections
+            document.getElementById('startIntersection').value = '';
+            document.getElementById('endIntersection').value = '';
+        }
+
+        function redrawRoute(routeData) {
+            // Remove old route visuals
+            if (routePolyline) {
+                routePolyline.setMap(null);
+            }
+            routeMarkers.forEach(marker => marker.setMap(null));
+            routeMarkers = [];
+
+            // Draw route polyline
+            const path = routeData.path.map(p => ({ lat: p.lat, lng: p.lng }));
+            
+            routePolyline = new google.maps.Polyline({
+                path: path,
+                strokeColor: '#00ffff',
+                strokeOpacity: 1,
+                strokeWeight: 6,
+                map: map,
+                zIndex: 1000
+            });
+
+            // Add start marker (Green with A)
+            const startMarker = new google.maps.Marker({
+                position: path[0],
+                map: map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 12,
+                    fillColor: '#4ade80',
+                    fillOpacity: 1,
+                    strokeColor: '#fff',
+                    strokeWeight: 3
+                },
+                label: {
+                    text: 'A',
+                    color: '#fff',
+                    fontWeight: 'bold'
+                },
+                zIndex: 1001
+            });
+            routeMarkers.push(startMarker);
+
+            // Add end marker (Red with B)
+            const endMarker = new google.maps.Marker({
+                position: path[path.length - 1],
+                map: map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 12,
+                    fillColor: '#ef4444',
+                    fillOpacity: 1,
+                    strokeColor: '#fff',
+                    strokeWeight: 3
+                },
+                label: {
+                    text: 'B',
+                    color: '#fff',
+                    fontWeight: 'bold'
+                },
+                zIndex: 1001
+            });
+            routeMarkers.push(endMarker);
+        }
+fetch('/api/optimal-route/', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ source: 'A', destination: 'D' })
+})
+.then(res => res.json())
+.then(data => {
+  drawRoute(data.main_route, 'blue');       // Main route
+  drawRoute(data.alternate_route, 'gray');  // Alternate route
+});
+
+function drawRoute(route, color) {
+  const latlngs = [];
+  route.forEach(seg => {
+    // Convert each intersection name to coordinates (you can fetch or store locally)
+    // Example:
+    const fromCoord = getCoordinates(seg.from);
+    const toCoord = getCoordinates(seg.to);
+    latlngs.push([fromCoord.lat, fromCoord.lng], [toCoord.lat, toCoord.lng]);
+  });
+  L.polyline(latlngs, { color, weight: 5, opacity: color === 'gray' ? 0.6 : 1 }).addTo(map);
+}
+
+        function displayRoute(routeData) {
+            // Draw route on map
+            redrawRoute(routeData);
+
+            // Fit map to route bounds
+            const path = routeData.path.map(p => ({ lat: p.lat, lng: p.lng }));
+            const bounds = new google.maps.LatLngBounds();
+            path.forEach(point => bounds.extend(point));
+            map.fitBounds(bounds);
+
+            // Display route info
+            const routeInfo = document.getElementById('routeInfo');
+            const routeDetails = document.getElementById('routeDetails');
+
+            let detailsHTML = `
+                <div class="stat" style="background: #1a1a2e; border-left: 4px solid #00ffff;">
+                    <span><strong>Total Time:</strong></span>
+                    <span><strong>${routeData.total_time} min</strong></span>
+                </div>
+                <div class="stat" style="background: #1a1a2e;">
+                    <span>Segments:</span>
+                    <span>${routeData.segments.length}</span>
+                </div>
+                <button onclick="clearRoute()" style="margin: 10px 0; background: #ef4444;">
+                    🗑️ Clear Route
+                </button>
+                <div style="margin-top: 15px; margin-bottom: 10px;">
+                    <strong>Route Segments:</strong>
+                </div>
+            `;
+
+            routeData.segments.forEach((segment, idx) => {
+                const colorMap = {
+                    'low': '#4ade80',
+                    'medium': '#fbbf24',
+                    'high': '#fb923c',
+                    'critical': '#ef4444'
+                };
+
+                const trafficEmoji = {
+                    'low': '🟢',
+                    'medium': '🟡',
+                    'high': '🟠',
+                    'critical': '🔴'
+                };
+
+                detailsHTML += `
+                    <div class="route-segment" style="border-left-color: ${colorMap[segment.traffic_level]}">
+                        <strong>${idx + 1}. ${segment.from} → ${segment.to}</strong><br>
+                        ${trafficEmoji[segment.traffic_level]} Traffic: ${segment.traffic_level.toUpperCase()}<br>
+                        ⏱️ Time: ${segment.travel_time} min
+                    </div>
+                `;
+            });
+
+            routeDetails.innerHTML = detailsHTML;
+            routeInfo.style.display = 'block';
+        }
+        function updateRouteTrafficStats(segments, startId, endId) {
+    // Calculate stats based on the selected route's segments
+    const stats = {
+        total: segments.length,
+        low: segments.filter(s => s.traffic_level === 'low').length,
+        medium: segments.filter(s => s.traffic_level === 'medium').length,
+        high: segments.filter(s => s.traffic_level === 'high').length,
+        critical: segments.filter(s => s.traffic_level === 'critical').length
+    };
+
+    // Get the names of start & end intersections
+    const startName = intersectionsData.find(i => i.id == startId)?.name || "Start";
+    const endName = intersectionsData.find(i => i.id == endId)?.name || "End";
+
+    // Get current time
+    const now = new Date();
+    const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Build stats HTML
+    const statsHTML = `
+        <div style="font-size:13px; color:#9ca3af; margin-bottom:8px;">
+            Traffic Statistics (Route ${startName} → ${endName})
+        </div>
+        <div class="stat"><span>Total Segments:</span><span>${stats.total}</span></div>
+        <div class="stat"><span>🟢 Low Traffic:</span><span>${stats.low}</span></div>
+        <div class="stat"><span>🟡 Medium Traffic:</span><span>${stats.medium}</span></div>
+        <div class="stat"><span>🟠 High Traffic:</span><span>${stats.high}</span></div>
+        <div class="stat"><span>🔴 Critical:</span><span>${stats.critical}</span></div>
+        <div style="font-size:12px; color:#9ca3af; margin-top:6px;">
+            Last Updated: ${timeString}
+        </div>
+    `;
+
+    // Update sidebar
+    document.getElementById('trafficStats').innerHTML = statsHTML;
+    document.getElementById('trafficStats').style.display = 'block';
+}
+
+
+      function simulateTraffic() {
+        
+            document.getElementById('loading').style.display = 'block';
+
+            fetch('/api/simulate-traffic/')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('loading').style.display = 'none';
+
+                    // Clear existing visuals
+                    polylines.forEach(polyline => polyline.setMap(null));
+                    polylines = [];
+
+                    const colorMap = {
+                        'low': '#4ade80',
+                        'medium': '#fbbf24',
+                        'high': '#fb923c',
+                        'critical': '#ef4444'
+                    };
+
+                    let totalDistance = 0;
+                    let totalTime = 0;
+                    let routeHTML = `
+                        <h3>Optimal Route Summary</h3>
+                        <div style="margin-bottom:10px;">
+                            <strong>Segments:</strong> ${data.roads.length}
+                        </div>
+                    `;
+
+                    data.roads.forEach((road, idx) => {
+                        const fromIntersection = intersectionsData.find(i => i.name === road.from);
+                        const toIntersection = intersectionsData.find(i => i.name === road.to);
+
+                        if (!fromIntersection || !toIntersection) return;
+
+                        // Calculate distance between nodes (Haversine formula)
+                        const R = 6371; // km
+                        const dLat = (toIntersection.lat - fromIntersection.lat) * Math.PI / 180;
+                        const dLon = (toIntersection.lng - fromIntersection.lng) * Math.PI / 180;
+                        const a =
+                            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                            Math.cos(fromIntersection.lat * Math.PI / 180) *
+                            Math.cos(toIntersection.lat * Math.PI / 180) *
+                            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                        const distance = R * c; // in km
+
+                        totalDistance += distance;
+                        totalTime += road.travel_time;
+
+                        // Draw the road on the map
+                        const polyline = new google.maps.Polyline({
+                            path: [
+                                { lat: fromIntersection.lat, lng: fromIntersection.lng },
+                                { lat: toIntersection.lat, lng: toIntersection.lng }
+                            ],
+                            strokeColor: colorMap[road.traffic],
+                            strokeOpacity: 0.9,
+                            strokeWeight: 6,
+                            map: map
+                        });
+
+                        polylines.push(polyline);
+
+                        // Midpoint for InfoWindow
+                        const midLat = (fromIntersection.lat + toIntersection.lat) / 2;
+                        const midLng = (fromIntersection.lng + toIntersection.lng) / 2;
+
+                        const infoWindow = new google.maps.InfoWindow({
+                            content: `<div style="color:#000;font-size:13px;">
+                                <strong>${road.from} → ${road.to}</strong><br>
+                                Distance: ${distance.toFixed(2)} km<br>
+                                Time: ${road.travel_time} min<br>
+                                Traffic: <span style="color:${colorMap[road.traffic]}">
+                                    ${road.traffic.toUpperCase()}
+                                </span>
+                            </div>`,
+                            position: { lat: midLat, lng: midLng }
+                        });
+
+                        infoWindow.open(map);
+
+                        // Add to sidebar route details
+                        routeHTML += `
+                            <div class="route-segment" style="border-left-color:${colorMap[road.traffic]}">
+                                <strong>${idx + 1}. ${road.from} → ${road.to}</strong><br>
+                                Distance: ${distance.toFixed(2)} km<br>
+                                ⏱️ Time: ${road.travel_time} min<br>
+                                🚦 Traffic: <span style="color:${colorMap[road.traffic]}">
+                                    ${road.traffic.toUpperCase()}
+                                </span>
+                            </div>
+                        `;
+                    });
+
+                    routeHTML += `
+                        <div class="stat" style="background:#1a1a2e;border-left:4px solid #00ffff;margin-top:10px;">
+                            <span><strong>Total Distance:</strong></span><span><strong>${totalDistance.toFixed(2)} km</strong></span>
+                        </div>
+                        <div class="stat" style="background:#1a1a2e;border-left:4px solid #00ffff;">
+                            <span><strong>Total Time:</strong></span><span><strong>${totalTime} min</strong></span>
+                        </div>
+                    `;
+
+                    document.getElementById('routeInfo').style.display = 'block';
+                    document.getElementById('routeDetails').innerHTML = routeHTML;
+
+                    // Update overall stats box
+                    const stats = {
+                        total: data.roads.length,
+                        low: data.roads.filter(r => r.traffic === 'low').length,
+                        medium: data.roads.filter(r => r.traffic === 'medium').length,
+                        high: data.roads.filter(r => r.traffic === 'high').length,
+                        critical: data.roads.filter(r => r.traffic === 'critical').length
+                    };
+
+                    document.getElementById('trafficStats').innerHTML = `
+                        <div class="stat"><span>Total Roads:</span><span>${stats.total}</span></div>
+                        <div class="stat"><span>🟢 Low Traffic:</span><span>${stats.low}</span></div>
+                        <div class="stat"><span>🟡 Medium Traffic:</span><span>${stats.medium}</span></div>
+                        <div class="stat"><span>🟠 High Traffic:</span><span>${stats.high}</span></div>
+                        <div class="stat"><span>🔴 Critical:</span><span>${stats.critical}</span></div>
+                    `;
+                })
+                .catch(error => {
+                    document.getElementById('loading').style.display = 'none';
+                    alert('Error simulating traffic: ' + error);
+                });
+        }
+
+
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC__ktCxrMNHYnlgNDXqWc-RxP2Wu9yZ4w&callback=initMap" async defer></script>
+</body>
+</html>
