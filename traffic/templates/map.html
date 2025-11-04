@@ -182,7 +182,6 @@
                     <option value="">Select End Point</option>
                 </select>
                 <button onclick="findOptimalRoute()">Find Optimal Route</button>
-                <button onclick="simulateTraffic()">Simulate Traffic</button>
             </div>
 
             <div class="legend">
@@ -231,6 +230,9 @@
         let intersectionsData = [];
         let roadsData = [];
         let currentRoute = null;
+        let directionsService;
+        let directionsRenderer;
+
 
         function initMap() {
             map = new google.maps.Map(document.getElementById('map'), {
