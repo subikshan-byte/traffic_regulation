@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-Time Traffic Regulation System</title>
+    <title>Real-Time Traffic</title>
     <style>
         * {
             margin: 0;
@@ -168,7 +168,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>🚦 Real-Time Traffic Regulation System</h1>
+        <h1>🚦 Real-Time Traffic </h1>
     </div>
 
     <div class="container">
@@ -182,6 +182,9 @@
                     <option value="">Select End Point</option>
                 </select>
                 <button onclick="findOptimalRoute()">Find Optimal Route</button>
+     
+       
+                <!--<button onclick="function simulateTraffic()">simulate traffic</button>-->
             </div>
 
             <div class="legend">
@@ -233,31 +236,37 @@
         let directionsService;
         let directionsRenderer;
 
+function initMap() {
+    map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: 13.0827, lng: 80.2707 }, // Chennai
+        zoom: 12,
+        styles: [
+            { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+            { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+            { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+            {
+                featureType: "road",
+                elementType: "geometry",
+                stylers: [{ color: "#38414e" }]
+            },
+            {
+                featureType: "road",
+                elementType: "geometry.stroke",
+                stylers: [{ color: "#212a37" }]
+            }
+        ]
+    });
 
-        function initMap() {
-            map = new google.maps.Map(document.getElementById('map'), {
-                center: { lat: 13.0827, lng: 80.2707 }, // Chennai coordinates
-                zoom: 12,
-                styles: [
-                    { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-                    { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-                    { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-                    {
-                        featureType: "road",
-                        elementType: "geometry",
-                        stylers: [{ color: "#38414e" }]
-                    },
-                    {
-                        featureType: "road",
-                        elementType: "geometry.stroke",
-                        stylers: [{ color: "#212a37" }]
-                    }
-                ]
-            });
+    // ✅ Add this line — enables real-time Google traffic data
+    const trafficLayer = new google.maps.TrafficLayer();
+    trafficLayer.setMap(map);
 
-            loadMapData();
-            setInterval(loadMapData, 1000000000); // Refresh every 10 seconds
-        }
+    // Optional: if you still want your backend map data
+    loadMapData();
+    setInterval(loadMapData, 600000); // refresh your custom data every 10 min
+}
+
+    
         function loadMapData() {
             fetch('/api/map-data/')
                 .then(response => response.json())

@@ -56,3 +56,18 @@ class PhoneSignal(models.Model):
     
     class Meta:
         ordering = ['-timestamp']
+# models.py
+from django.db import models
+from django.utils import timezone
+
+class RouteTraffic(models.Model):
+    start = models.CharField(max_length=200)
+    end = models.CharField(max_length=200)
+    distance_km = models.FloatField()
+    normal_time_min = models.FloatField()
+    traffic_time_min = models.FloatField()
+    congestion_level = models.CharField(max_length=20)
+    last_updated = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.start} → {self.end} ({self.congestion_level})"

@@ -121,3 +121,6 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+GOOGLE_API_KEY = "AIzaSyC__ktCxrMNHYnlgNDXqWc-RxP2Wu9yZ4w"
+# settings.py
+GOOGLE_MAPS_API_KEY = "AIzaSyC__ktCxrMNHYnlgNDXqWc-RxP2Wu9yZ4w"

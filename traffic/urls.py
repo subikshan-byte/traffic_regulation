@@ -9,4 +9,6 @@ urlpatterns = [
     path('api/optimal-route/', views.get_optimal_route, name='optimal_route'),
     path('api/simulate-traffic/', views.simulate_traffic, name='simulate_traffic'),
 path('api/route-traffic/', views.get_route_traffic, name='route_traffic'),
+path('update-google-traffic/', views.update_traffic_from_google, name='update_google_traffic'),
+
 ]

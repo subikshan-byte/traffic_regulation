@@ -212,7 +212,7 @@ def get_route_traffic(request):
     if not start_id or not end_id:
         return JsonResponse({'error': 'Start and end points required'}, status=400)
 
-    # Find route via Floyd-Warshall (you already have this)
+    # Find route 
     fw = FloydWarshallTraffic()
     route_data = fw.find_optimal_route(int(start_id), int(end_id))
 
@@ -221,8 +221,8 @@ def get_route_traffic(request):
     segments = []
     total_time_min = 0.0
 
-    # Traffic speed multipliers (applied to base speed)
-    # Higher traffic -> lower multiplier -> lower effective speed -> higher time
+    # Traffic speed multipliers 
+    # Higher traffic -> lower 
     traffic_speed_multiplier = {
         'low': 1.0,
         'medium': 0.75,
@@ -234,7 +234,7 @@ def get_route_traffic(request):
         # get the road object
         road = Road.objects.get(from_intersection__name=seg['from'], to_intersection__name=seg['to'])
 
-        # count unique devices in window
+        # count unique 
         recent_signals = PhoneSignal.objects.filter(
             road=road,
             timestamp__gte=one_day_ago
@@ -336,3 +336,56 @@ def get_route_traffic(request):
         'segments': segments,
         'time_window': time_window
     })
+import requests
+from django.http import JsonResponse
+from .models import Road
+from django.conf import settings
+
+def update_traffic_from_google(request):
+    """
+    Update each road's travel time and traffic level using Google Maps live data.
+    """
+    try:
+        api_key = settings.GOOGLE_API_KEY  # store this in settings.py
+        base_url = "https://maps.googleapis.com/maps/api/directions/json"
+
+        for road in Road.objects.all():
+            origin = f"{road.from_intersection.latitude},{road.from_intersection.longitude}"
+            destination = f"{road.to_intersection.latitude},{road.to_intersection.longitude}"
+
+            params = {
+                "origin": origin,
+                "destination": destination,
+                "departure_time": "now",
+                "key": api_key
+            }
+
+            response = requests.get(base_url, params=params)
+            data = response.json()
+
+            if data['status'] == 'OK':
+                leg = data['routes'][0]['legs'][0]
+                duration_in_traffic = leg.get('duration_in_traffic', leg['duration'])
+                seconds = duration_in_traffic['value']
+
+                road.travel_time = round(seconds / 60, 2)  # in minutes
+
+                # Calculate traffic level based on time ratio
+                normal_time = leg['duration']['value']
+                ratio = seconds / normal_time
+
+                if ratio >= 2.0:
+                    road.traffic_level = 'critical'
+                elif ratio >= 1.5:
+                    road.traffic_level = 'high'
+                elif ratio >= 1.2:
+                    road.traffic_level = 'medium'
+                else:
+                    road.traffic_level = 'low'
+
+                road.save()
+
+        return JsonResponse({'status': 'success', 'message': 'Traffic data updated from Google'})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
