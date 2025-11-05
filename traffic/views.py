@@ -2,7 +2,7 @@ from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from .models import Intersection, Road, PhoneSignal
+from .models import Intersection, Road
 from .floyd_warshall import FloydWarshallTraffic
 import json
 from datetime import timedelta
@@ -42,128 +42,109 @@ def get_map_data(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def update_phone_signals(request):
-    try:
-        data = json.loads(request.body)
-        device_id = data.get('device_id')
-        road_id = data.get('road_id')
-        lat = data.get('latitude')
-        lng = data.get('longitude')
-        
-        road = Road.objects.get(id=road_id)
-        
-        PhoneSignal.objects.create(
-            device_id=device_id,
-            road=road,
-            latitude=lat,
-            longitude=lng
-        )
-        
-        # Count unique devices in last 5 minutes
-        five_min_ago = timezone.now() - timedelta(minutes=5)
-        recent_signals = PhoneSignal.objects.filter(
-            road=road,
-            timestamp__gte=five_min_ago
-        ).values('device_id').distinct().count()
-        
-        road.current_traffic = recent_signals
-        road.update_traffic_level()
-        
-        return JsonResponse({'status': 'success', 'traffic_count': recent_signals})
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
 
 @csrf_exempt
 def get_optimal_route(request):
-    data = json.loads(request.body)
-    source_name = data.get('source')
-    destination_name = data.get('destination')
+    try:
+        data = json.loads(request.body)
+        source_name = data.get('source')
+        destination_name = data.get('destination')
 
-    intersections = Intersection.objects.all()
-    intersection_index = {inter.name: i for i, inter in enumerate(intersections)}
-    index_intersection = {i: inter for inter, i in intersection_index.items()}
+        if not source_name or not destination_name:
+            return JsonResponse({'error': 'Source and destination required'}, status=400)
 
-    n = len(intersections)
-    INF = float('inf')
-    dist = [[INF] * n for _ in range(n)]
-    next_node = [[-1] * n for _ in range(n)]
+        intersections = list(Intersection.objects.all())
+        intersection_index = {inter.name: i for i, inter in enumerate(intersections)}
+        index_intersection = {i: inter for i, inter in enumerate(intersections)}
 
-    # Base: direct road distances
-    for road in Road.objects.all():
-        i, j = intersection_index[road.from_intersection.name], intersection_index[road.to_intersection.name]
-        dist[i][j] = road.travel_time
-        next_node[i][j] = j
+        n = len(intersections)
+        INF = float('inf')
+        dist = [[INF] * n for _ in range(n)]
+        next_node = [[-1] * n for _ in range(n)]
 
-    # Floyd–Warshall to compute all pairs shortest paths
-    for k in range(n):
-        for i in range(n):
-            for j in range(n):
-                if dist[i][k] + dist[k][j] < dist[i][j]:
-                    dist[i][j] = dist[i][k] + dist[k][j]
-                    next_node[i][j] = next_node[i][k]
+        # Base: direct road distances
+        for road in Road.objects.all():
+            i = intersection_index[road.from_intersection.name]
+            j = intersection_index[road.to_intersection.name]
+            dist[i][j] = road.travel_time
+            next_node[i][j] = j
 
-    def get_path(u, v):
-        if next_node[u][v] == -1:
-            return []
-        path = [u]
-        while u != v:
-            u = next_node[u][v]
-            path.append(u)
-        return path
+        # Floyd–Warshall
+        for k in range(n):
+            for i in range(n):
+                for j in range(n):
+                    if dist[i][k] + dist[k][j] < dist[i][j]:
+                        dist[i][j] = dist[i][k] + dist[k][j]
+                        next_node[i][j] = next_node[i][k]
 
-    src, dst = intersection_index[source_name], intersection_index[destination_name]
-    optimal_path = get_path(src, dst)
-    optimal_distance = dist[src][dst]
+        def get_path(u, v):
+            if next_node[u][v] == -1:
+                return []
+            path = [u]
+            while u != v:
+                u = next_node[u][v]
+                path.append(u)
+            return path
 
-    # Get main route roads
-    main_roads = []
-    for i in range(len(optimal_path) - 1):
-        from_node = index_intersection[optimal_path[i]]
-        to_node = index_intersection[optimal_path[i + 1]]
-        road = Road.objects.get(from_intersection=from_node, to_intersection=to_node)
-        main_roads.append({
-            "from": from_node.name,
-            "to": to_node.name,
-            "traffic": road.traffic_level,
-            "travel_time": road.travel_time,
+        src, dst = intersection_index[source_name], intersection_index[destination_name]
+        optimal_path = get_path(src, dst)
+
+        if not optimal_path:
+            return JsonResponse({'error': 'No valid path found between source and destination'}, status=400)
+
+        optimal_distance = dist[src][dst]
+        main_roads = []
+
+        for i in range(len(optimal_path) - 1):
+            from_node = index_intersection[optimal_path[i]]
+            to_node = index_intersection[optimal_path[i + 1]]
+            road = Road.objects.get(from_intersection=from_node, to_intersection=to_node)
+            main_roads.append({
+                "from": from_node.name,
+                "to": to_node.name,
+                "traffic": road.traffic_level,
+                "travel_time": road.travel_time,
+            })
+
+        # Alternate route
+        congested = sorted(main_roads, key=lambda x: ['low','medium','high','critical'].index(x['traffic']), reverse=True)[0]
+        avoid_road = Road.objects.get(from_intersection__name=congested["from"], to_intersection__name=congested["to"])
+
+        backup_cost = dist[intersection_index[avoid_road.from_intersection.name]][intersection_index[avoid_road.to_intersection.name]]
+        dist[intersection_index[avoid_road.from_intersection.name]][intersection_index[avoid_road.to_intersection.name]] = INF
+
+        # Re-run Floyd–Warshall
+        for k in range(n):
+            for i in range(n):
+                for j in range(n):
+                    if dist[i][k] + dist[k][j] < dist[i][j]:
+                        dist[i][j] = dist[i][k] + dist[k][j]
+                        next_node[i][j] = next_node[i][k]
+
+        alternate_path = get_path(src, dst)
+        alternate_roads = []
+
+        for i in range(len(alternate_path) - 1):
+            from_node = index_intersection[alternate_path[i]]
+            to_node = index_intersection[alternate_path[i + 1]]
+            road = Road.objects.get(from_intersection=from_node, to_intersection=to_node)
+            alternate_roads.append({
+                "from": from_node.name,
+                "to": to_node.name,
+                "traffic": road.traffic_level,
+                "travel_time": road.travel_time,
+            })
+
+        # Restore
+        dist[intersection_index[avoid_road.from_intersection.name]][intersection_index[avoid_road.to_intersection.name]] = backup_cost
+
+        return JsonResponse({
+            "main_route": main_roads,
+            "alternate_route": alternate_roads,
         })
 
-    # 🔄 Alternate route: avoid most congested road from main route
-    congested = sorted(main_roads, key=lambda x: ['low','medium','high','critical'].index(x['traffic']), reverse=True)[0]
-    avoid_road = Road.objects.get(from_intersection__name=congested["from"], to_intersection__name=congested["to"])
-
-    # Temporarily set high cost for congested road
-    backup_cost = dist[intersection_index[avoid_road.from_intersection.name]][intersection_index[avoid_road.to_intersection.name]]
-    dist[intersection_index[avoid_road.from_intersection.name]][intersection_index[avoid_road.to_intersection.name]] = INF
-
-    # Re-run Floyd–Warshall for alternate route
-    for k in range(n):
-        for i in range(n):
-            for j in range(n):
-                if dist[i][k] + dist[k][j] < dist[i][j]:
-                    dist[i][j] = dist[i][k] + dist[k][j]
-                    next_node[i][j] = next_node[i][k]
-
-    alternate_path = get_path(src, dst)
-    alternate_roads = []
-    for i in range(len(alternate_path) - 1):
-        from_node = index_intersection[alternate_path[i]]
-        to_node = index_intersection[alternate_path[i + 1]]
-        road = Road.objects.get(from_intersection=from_node, to_intersection=to_node)
-        alternate_roads.append({
-            "from": from_node.name,
-            "to": to_node.name,
-            "traffic": road.traffic_level,
-            "travel_time": road.travel_time,
-        })
-
-    # Restore original cost
-    dist[intersection_index[avoid_road.from_intersection.name]][intersection_index[avoid_road.to_intersection.name]] = backup_cost
-
-    return JsonResponse({
-        "main_route": main_roads,
-        "alternate_route": alternate_roads,
-    })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 from django.http import JsonResponse
 import random
@@ -204,6 +185,57 @@ def haversine_km(lat1, lon1, lat2, lon2):
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
+import googlemaps
+from datetime import datetime
+
+# Replace with your Google API Key
+API_KEY = "AIzaSyC__ktCxrMNHYnlgNDXqWc-RxP2Wu9yZ4w"
+
+# Initialize Google Maps client
+gmaps = googlemaps.Client(key=API_KEY)
+
+def get_traffic_level(origin_lat, origin_lng, dest_lat, dest_lng):
+    """
+    Fetches real-time traffic data between two coordinates using Google Maps Directions API.
+    Returns a simplified traffic level: Low, Moderate, High, or Critical.
+    """
+
+    origin = f"{origin_lat},{origin_lng}"
+    destination = f"{dest_lat},{dest_lng}"
+    now = datetime.now()
+
+    directions_result = gmaps.directions(
+        origin,
+        destination,
+        mode="driving",
+        departure_time=now,
+        traffic_model="best_guess"
+    )
+
+    # Extract required data
+    route = directions_result[0]['legs'][0]
+    normal_duration = route['duration']['value'] / 60          # in minutes
+    traffic_duration = route['duration_in_traffic']['value'] / 60  # in minutes
+
+    # Calculate delay ratio
+    delay_ratio = traffic_duration / normal_duration
+
+    # Classify traffic level
+    if delay_ratio <= 1.1:
+        traffic_level = "Low"
+    elif 1.1 < delay_ratio <= 1.4:
+        traffic_level = "Moderate"
+    elif 1.4 < delay_ratio <= 1.8:
+        traffic_level = "High"
+    else:
+        traffic_level = "Critical"
+
+    return traffic_level
+    
+
+
+# Example test run
+
 
 def get_route_traffic(request):
     start_id = request.GET.get('start')
@@ -233,14 +265,22 @@ def get_route_traffic(request):
     for seg in route_data['segments']:
         # get the road object
         road = Road.objects.get(from_intersection__name=seg['from'], to_intersection__name=seg['to'])
+        distance_km = None
+        if hasattr(road, 'distance') and road.distance is not None:
+            try:
+                # if distance stored in meters:
+                distance_km = float(road.distance) / 1000.0
+            except Exception:
+                distance_km = None
 
+        if distance_km is None:
+            # fallback: compute via haversine using intersection coords
+            from_lat = road.from_intersection.latitude
+            from_lng = road.from_intersection.longitude
+            to_lat = road.to_intersection.latitude
+            to_lng = road.to_intersection.longitude
+            distance_km = haversine_km(from_lat, from_lng, to_lat, to_lng)
         # count unique 
-        recent_signals = PhoneSignal.objects.filter(
-            road=road,
-            timestamp__gte=one_day_ago
-        ).values('device_id').distinct().count()
-
-        road.current_traffic = recent_signals
         road.update_traffic_level()
         # optional: save updated traffic if you want persistence
         # road.save()

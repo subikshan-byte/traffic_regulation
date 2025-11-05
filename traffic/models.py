@@ -47,15 +47,7 @@ class Road(models.Model):
     def __str__(self):
         return f"{self.from_intersection.name} -> {self.to_intersection.name}"
 
-class PhoneSignal(models.Model):
-    device_id = models.CharField(max_length=100)
-    road = models.ForeignKey(Road, on_delete=models.CASCADE)
-    timestamp = models.DateTimeField(auto_now_add=True)
-    latitude = models.FloatField()
-    longitude = models.FloatField()
-    
-    class Meta:
-        ordering = ['-timestamp']
+
 # models.py
 from django.db import models
 from django.utils import timezone

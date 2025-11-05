@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_crontab',
     'traffic'
 ]
 
@@ -124,3 +125,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 GOOGLE_API_KEY = "AIzaSyC__ktCxrMNHYnlgNDXqWc-RxP2Wu9yZ4w"
 # settings.py
 GOOGLE_MAPS_API_KEY = "AIzaSyC__ktCxrMNHYnlgNDXqWc-RxP2Wu9yZ4w"
+
+
+

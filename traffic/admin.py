@@ -3,7 +3,7 @@ from django.contrib import admin
 # Register your models here.
 
 from django.contrib import admin
-from .models import Intersection, Road, PhoneSignal
+from .models import Intersection, Road
 
 @admin.register(Intersection)
 class IntersectionAdmin(admin.ModelAdmin):
@@ -15,7 +15,3 @@ class RoadAdmin(admin.ModelAdmin):
                     'current_traffic', 'capacity', 'traffic_level', 'travel_time']
     list_filter = ['traffic_level']
 
-@admin.register(PhoneSignal)
-class PhoneSignalAdmin(admin.ModelAdmin):
-    list_display = ['device_id', 'road', 'timestamp']
-    list_filter = ['road', 'timestamp']

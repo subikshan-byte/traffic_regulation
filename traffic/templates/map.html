@@ -184,7 +184,7 @@
                 <button onclick="findOptimalRoute()">Find Optimal Route</button>
      
        
-                <!--<button onclick="function simulateTraffic()">simulate traffic</button>-->
+                
             </div>
 
             <div class="legend">
@@ -258,8 +258,7 @@ function initMap() {
     });
 
     // ✅ Add this line — enables real-time Google traffic data
-    const trafficLayer = new google.maps.TrafficLayer();
-    trafficLayer.setMap(map);
+    
 
     // Optional: if you still want your backend map data
     loadMapData();
@@ -495,6 +494,7 @@ function showSelectedRoute(segments) {
     const last = segments[segments.length - 1];
     addMarker(first.from_coords, 'A', '#4ade80');
     addMarker(last.to_coords, 'B', '#ef4444');
+    
 }
 
 function addMarker(coords, label, color) {
@@ -851,6 +851,7 @@ function drawRoute(route, color) {
 
 
     </script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC__ktCxrMNHYnlgNDXqWc-RxP2Wu9yZ4w&callback=initMap" async defer></script>
+    <script async
+  defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC__ktCxrMNHYnlgNDXqWc-RxP2Wu9yZ4w&callback=initMap"></script>
 </body>
 </html>
